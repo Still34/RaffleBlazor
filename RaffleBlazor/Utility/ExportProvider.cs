@@ -1,4 +1,4 @@
-﻿using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using RaffleBlazor.Models;
@@ -29,13 +29,17 @@ namespace RaffleBlazor.Utility
                 workbookPart.Workbook = new Workbook();
                 var workbookStylesPart = workbookPart.AddNewPart<WorkbookStylesPart>();
                 workbookStylesPart.Stylesheet = CreateStylesheet();
+
+                // Define sheet
+                var sheetName = $"{date:yyyy}-股員名單";
                 WorksheetPart worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 worksheetPart.Worksheet = new Worksheet(new SheetData());
                 Sheets sheets = spreadsheet.WorkbookPart.Workbook.AppendChild(new Sheets());
-                Sheet sheet = new Sheet { Id = spreadsheet.WorkbookPart.GetIdOfPart(worksheetPart), SheetId = 1, Name = $"{date:yyyy}-股員名單" };
+                Sheet sheet = new Sheet { Id = spreadsheet.WorkbookPart.GetIdOfPart(worksheetPart), SheetId = 1, Name =  sheetName};
                 sheets.AppendChild(sheet);
                 SheetData sheetData = worksheetPart.Worksheet.GetFirstChild<SheetData>();
 
+                // Insert data
                 var row = new Row { RowIndex = 1 };
                 row.Append(
                     new Cell { CellValue = new CellValue("學號"), DataType = CellValues.String },
@@ -57,6 +61,10 @@ namespace RaffleBlazor.Utility
                         rowIndex++;
                     }
                 }
+
+                // Add title
+                spreadsheet.PackageProperties.Title = $"{date:yyyy} 選股結果";
+                spreadsheet.PackageProperties.Creator = "RaffleBlazor 選股程式";
             }
             return await ReadStreamToBase64(ms);
         }
