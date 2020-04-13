@@ -1,0 +1,13 @@
+﻿<Router AppAssembly="@typeof(Program).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)"/>
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <div class="d-flex flex-column align-items-center">
+                <img src="images/blobthinkingglare.png" class="img-fluid"/>
+                <p>沒有這個頁面欸，是在哈囉？</p>
+            </div>
+        </LayoutView>
+    </NotFound>
+</Router>

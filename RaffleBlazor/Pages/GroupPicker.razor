@@ -1,0 +1,451 @@
+﻿@page "/picker"
+@using System.Globalization
+@using System.IO
+@using System.Text
+@using System.Threading
+@using Blazor.FileReader
+@using Blazorise.Snackbar
+@using CsvHelper
+@using DocumentFormat.OpenXml
+@using DocumentFormat.OpenXml.Packaging
+@using DocumentFormat.OpenXml.Spreadsheet
+@using RaffleBlazor.Models
+@using RaffleBlazor.Utility
+@using Row = DocumentFormat.OpenXml.Spreadsheet.Row
+@inject IFileReaderService FileReaderService
+@inject EnumerableUtility EnumerableUtility
+@inject IJSRuntime JSRuntime
+@inject ExportProvider ExportProvider
+
+<section id="overlay-container" class="@OverlayClasses">
+    <div class="overlay">
+        <div id="overlay-content">
+            @if (Students.Count > 0 && Countdown < 0)
+            {
+                <div class="d-flex flex-row justify-content-end" id="tools-container">
+                    <Tooltip Placement="Placement.Bottom" Text="存為Excel檔">
+                        <div class="saveas-button tools" @onclick="@(async () => { await GetExcelFileAsync(Departments); })">
+                            <i class="fas fa-save"></i>
+                        </div>
+                    </Tooltip>
+                    <Tooltip Placement="Placement.Bottom" Text="關閉此視窗">
+                        <div class="close-button tools" @onclick="@(() => { ToggleOverlay(true); })">
+                            <i class="fas fa-times-circle"></i>
+                        </div>
+                    </Tooltip>
+                </div>
+                <div id="result-container" class="@ResultClasses">
+                    @foreach (var student in Students)
+                    {
+                        <div id="entry">
+                            <span>@student.Id @student.Name @student.Department</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+        <div id="overlay-wave" class="box">
+            <div class="wave -one"></div>
+            <div class="wave -two"></div>
+            <div class="wave -three"></div>
+        </div>
+        <div id="overlay-loading">
+            <div id="dep-load-container" class="@LoadingClasses">
+                <div id="loader-text-container">
+                    <div class="loader-text bounce">
+                        猜猜自己會是什麼股(｡･∀･)ﾉﾞ
+                    </div>
+                </div>
+                <div id="loader-digit-container">
+                    <div class="countdown">@Countdown</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="main-area" class="@MainAreaCss">
+    <section id="description-area">
+        <h1>
+            選股抽號器
+        </h1>
+        <div id="description">
+            <p>
+                在使用本工具前，請先透過 <a href="https://forms.google.com" target="_blank">Google 表單</a>收集各學生的志願序，並將其匯出至 <a href="https://support.google.com/docs/answer/2917686?hl=zh-Hant&ref_topic=9055305" target="_blank">Google 試算表</a>中。
+            </p>
+        </div>
+        <div id="related-links">
+        </div>
+    </section>
+
+    <section class="d-inline-block" id="upload-area">
+        <div class="custom-file mb-2" id="config-section">
+            <input type="file" class="custom-file-input" id="config-file" accept=".csv" @ref="_configElementRef" @onchange="LoadConfig" />
+            <label class="custom-file-label" for="config-file">上傳設定檔 (*.csv)</label>
+        </div>
+        <div class="custom-file mb-2" id="raw-poll-section" style="@RaffleEntryInputCss">
+            <input type="file" class="custom-file-input" id="raw-poll-file" accept=".csv" @ref="_rawDataElementRef" />
+            <label class="custom-file-label" for="raw-poll-file">上傳志願序 (*.csv)</label>
+        </div>
+        <button type="button" class="btn btn-primary mb-2" @onclick="@(async () => {await LoadEntries(); await Task.Run(RunPoll);})">選股！</button>
+        <button type="button" class="btn btn-success mb-2 ml-2" @onclick="@(async () => {await JSRuntime.InvokeAsync<object>("FileSaveAs", "config.csv",Options.ConfigContent, "text/csv"); })">
+            下載股員設定範例檔案
+        </button>
+    </section>
+
+    <section id="log-area" class="d-flex flex-column">
+        <div id="alert-print">
+            <Alert Color="Blazorise.Color.Danger" Visible="@(!(string.IsNullOrEmpty(AlertTitle)))">
+                <Heading>
+                    @AlertTitle
+                </Heading>
+                <Paragraph>
+                    @AlertText
+                </Paragraph>
+            </Alert>
+        </div>
+        <Accordion>
+            <Card>
+                <CardHeader>
+                    <Heading Size="HeadingSize.Is5">
+                        <Button Clicked="@(() => IsLoggingVisible = !IsLoggingVisible)">輸出日誌</Button>
+                    </Heading>
+                </CardHeader>
+                <Collapse Visible="@IsLoggingVisible">
+                    <CardBody>
+                        <textarea class="form-control" disabled rows="10">@LoggingOutput</textarea>
+                    </CardBody>
+                </Collapse>
+            </Card>
+        </Accordion>
+    </section>
+</section>
+
+<!-- Save result as Excel -->
+
+@code{
+    public async Task GetExcelFileAsync(IReadOnlyCollection<Department> departments)
+    {
+        try
+        {
+            var base64 = await ExportProvider.GetXlsxAsync(departments);
+            await JSRuntime.InvokeAsync<object>("FileSaveAs", $"{DateTime.Now:yyyy-MM-dd}export.xlsx", base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch(Exception e)
+        {
+            PrintLog(MessageType.Error, e.Message, "無法匯出XLSX");
+        }
+    }
+}
+
+<!-- Snackbar definition -->
+
+<Snackbar @ref="_snackbar" Multiline="true" Color="@_snackbarColor">
+    <SnackbarBody>
+        @SnackbarMessage
+    </SnackbarBody>
+</Snackbar>
+
+@code{
+    Snackbar _snackbar;
+    SnackbarColor _snackbarColor;
+    public string SnackbarMessage { get; set; } = String.Empty;
+
+    internal void ShowSnackbar(string message, SnackbarColor color = SnackbarColor.Primary)
+    {
+        _snackbar.Hide();
+        _snackbarColor = color;
+        SnackbarMessage = message;
+        _snackbar.Show();
+    }
+}
+
+<!-- Logger -->
+
+@code{
+    public string LoggingOutput { get; set; } = string.Empty;
+    public string AlertTitle { get; set; }
+    public string AlertText { get; set; }
+    internal StringBuilder StringBuilder = new StringBuilder();
+    internal bool IsLoggingVisible { get; set; }
+    internal void PrintLog(MessageType messageType, string logMessage, string alertTitle = null)
+    {
+        if (messageType >= MessageType.Warning)
+        {
+            AlertTitle = alertTitle ?? "噢不，出錯了，希望這不是正式選股的時候出包 ヽ(*。>Д<)o゜";
+            AlertText = $"錯誤訊息: {logMessage}";
+            ShowSnackbar(alertTitle, SnackbarColor.Danger);
+        }
+
+        StringBuilder.AppendLine($"[{DateTime.UtcNow}] [{messageType}] {logMessage}");
+        LoggingOutput = StringBuilder.ToString();
+    }
+
+    public enum MessageType
+    {
+        Unknown,
+        Debug,
+        Verbose,
+        Information,
+        Warning,
+        Error
+    }
+}
+
+<!-- Visibility control -->
+
+@code
+{
+    public string MainAreaCss {get;set;} = "fadeIn";
+    public string LoadingClasses { get; set; } = "fadeOut";
+    public string OverlayClasses { get; set; } = "fadeOut";
+    public string ResultClasses { get; set; } = "spreadOut fadeIn";
+    public int Countdown { get; set; } = 10;
+    internal Timer _timer;
+
+    public void ToggleLoading(bool forceDisable = false)
+    {
+        if (LoadingClasses.Contains("fadeIn") || forceDisable)
+        {
+            LoadingClasses = "fadeOut";
+        }
+        else
+        {
+            MainAreaCss = "fadeOut";
+            OverlayClasses = "fadeIn";
+            LoadingClasses = "fadeIn";
+            ResultClasses = "spreadOut fadeIn";
+            _timer = new Timer(UpdateCountdown, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+        }
+    }
+
+    public void ToggleOverlay(bool forceDisable = false)
+    {
+        MainAreaCss = ToggleClassesState(MainAreaCss);
+        ResultClasses = ToggleClassesState(ResultClasses, forceDisable);
+        OverlayClasses = ToggleClassesState(OverlayClasses, forceDisable);
+        LoadingClasses = ToggleClassesState(LoadingClasses, forceDisable);
+    }
+
+    public string ToggleClassesState(string input, bool forceDisable = false)
+    {
+        if (forceDisable)
+        {
+            return "fadeOut";
+        }
+        if (input.Contains("fadeIn", StringComparison.OrdinalIgnoreCase))
+        {
+            return input.Replace("fadeIn", "fadeOut", StringComparison.OrdinalIgnoreCase);
+        }
+        if (input.Contains("fadeOut", StringComparison.OrdinalIgnoreCase))
+        {
+            return input.Replace("fadeOut", "fadeIn", StringComparison.OrdinalIgnoreCase);
+        }
+        return input.Trim() + " fadeIn";
+    }
+
+    internal void UpdateCountdown(object state)
+    {
+        if (Countdown > 0)
+        {
+            Countdown--;
+        }
+        else
+        {
+            _timer.Dispose();
+            ToggleLoading(true);
+            Countdown = -1;
+        }
+        StateHasChanged();
+    }
+
+}
+
+@code
+{
+    ElementReference _configElementRef;
+    ElementReference _rawDataElementRef;
+    IFileReaderRef _configFileReaderRef;
+    IFileReaderRef _rawDataFileReaderRef;
+    public List<Student> Students { get; set; } = new List<Student>();
+    internal IReadOnlyCollection<Department> Departments { get; set; }
+    internal IReadOnlyCollection<RaffleEntry> RaffleEntries { get; set; }
+    private readonly CultureInfo _csvCultureInfo = CultureInfo.GetCultureInfo("zh-tw");
+    public string RaffleEntryInputCss { get; set; } = "display: none;";
+
+    public int SumOfDepartmentMaxStudents { get; set; }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        _configFileReaderRef = FileReaderService.CreateReference(_configElementRef);
+        _rawDataFileReaderRef = FileReaderService.CreateReference(_rawDataElementRef);
+    }
+
+    private async Task LoadConfig()
+    {
+        Departments = await ParseDepartmentsAsync();
+        PrintLog(MessageType.Information, $"已取得 {Departments.Count} 個股別。");
+        ShowSnackbar($"已取得 {Departments.Count} 個股別及 {Departments.Sum(x=>x.MaxStudents)} 個股員。");
+        RaffleEntryInputCss = "display: inherit";
+    }
+    private async Task LoadEntries()
+    {
+        if (Departments?.Count > 0)
+        {
+            RaffleEntries = await ParseEntriesAsync(Departments);
+            PrintLog(MessageType.Information, $"已取得 {RaffleEntries.Count} 個志願序。");
+            ShowSnackbar($"已取得 {RaffleEntries.Count} 個志願序。");
+        }
+        else
+        {
+            ShowSnackbar("尚未讀取股員設定；你怎麼到這步的╰（‵□′）╯？", SnackbarColor.Danger);
+        }
+    }
+
+    internal bool PollPreconditionCheck()
+    {
+        if (Students?.Count > 0)
+        {
+            ShowSnackbar("已經抽過了歐，為了以防萬一，若您想要重抽請重新整理此頁面。", SnackbarColor.Warning);
+            ToggleLoading();
+            return false;
+        }
+        if (Departments == null || Departments?.Count == 0)
+        {
+            ShowSnackbar("股別數設定錯誤，請檢查您的設定檔。", SnackbarColor.Danger);
+            return false;
+        }
+        if (RaffleEntries == null || RaffleEntries?.Count == 0){
+            ShowSnackbar("志願數錯誤，請檢查您的選股輸出檔案。", SnackbarColor.Danger);
+            return false;
+        }
+        
+        var maxStudents = Departments.Sum(x => x.MaxStudents);
+        var entryCount = RaffleEntries.Count;
+        if (maxStudents != entryCount)
+        {
+            PrintLog(MessageType.Error, $"設定的股員人數 ({maxStudents}) 不符實際收到的學生志願數 ({entryCount})。", "請檢查是否有人填寫重複志願或股員人數設定有誤。");
+            return false;
+        }
+        
+        AlertTitle = null;
+        AlertText = null;
+        return true;
+    }
+    public void RunPoll()
+    {
+        var ensurePrecondition = PollPreconditionCheck();
+        if (!ensurePrecondition)
+            return;
+
+        try
+        {
+            foreach (var raffleEntry in RaffleEntries)
+            {
+                foreach (var preference in raffleEntry.Preferences)
+                {
+                    var targetDepartment = Departments.First(x => x.Name == preference.Name);
+                    if (targetDepartment.HasReachedLimits)
+                        continue;
+
+                    if (targetDepartment.Students.Any(x => x.Id == raffleEntry.Student.Id))
+                        continue;
+
+                    targetDepartment.AddStudent(raffleEntry.Student);
+                    break;
+                }
+            }
+            var studentsPerDepartment = Departments.OrderBy(x => x.Name).Select(x => x.Students);
+            foreach (var studentsList in studentsPerDepartment)
+                Students.AddRange(studentsList);
+            ShowSnackbar("選股完畢", SnackbarColor.Success);
+            ToggleLoading();
+        }
+        catch (Exception e)
+        {
+            PrintLog(MessageType.Error, e.ToString());
+        }
+    }
+
+    public (KeyValuePair<Department, int> mostPreferredDepartment, KeyValuePair<Department, int> leastPreferredDepartment) GetPreferenceStats(IEnumerable<RaffleEntry> raffleEntries)
+    {
+        var mostPreferredDict = new Dictionary<Department, int>();
+        var leastPreferredDict = new Dictionary<Department, int>();
+        foreach (var raffleEntry in raffleEntries)
+        {
+            var mostPreferred = raffleEntry.Preferences.First();
+            var leastPreferred = raffleEntry.Preferences.Last();
+            if (!(mostPreferredDict.TryAdd(mostPreferred, 1)))
+            {
+                mostPreferredDict[mostPreferred] = mostPreferredDict[mostPreferred] + 1;
+            }
+            if (!(leastPreferredDict.TryAdd(leastPreferred, 1)))
+            {
+                leastPreferredDict[leastPreferred] = leastPreferredDict[leastPreferred] + 1;
+            }
+        }
+
+        return (mostPreferredDict.OrderByDescending(x => x.Value).First(), leastPreferredDict.OrderByDescending(x => x.Value).First());
+    }
+
+    public async Task<IReadOnlyCollection<Department>> ParseDepartmentsAsync()
+    {
+        var configFile = (await _configFileReaderRef.EnumerateFilesAsync())?.FirstOrDefault();
+        if (configFile == null)
+        {
+            throw new FileNotFoundException("尚未上傳設定檔！");
+        }
+        var departmentLists = new List<Department>();
+        await using (var configFileStream = await configFile.CreateMemoryStreamAsync())
+        {
+            using var streamReader = new StreamReader(configFileStream);
+            using var csvReader = new CsvReader(streamReader, _csvCultureInfo);
+            await csvReader.ReadAsync();
+            await Task.Run(() => csvReader.ReadHeader());
+            while (await csvReader.ReadAsync())
+            {
+                var departmentName = csvReader.GetField<string>(0);
+                var maxDepartmentUsers = csvReader.GetField<int>(1);
+                departmentLists.Add(new Department(departmentName, maxDepartmentUsers));
+            }
+        }
+        return EnumerableUtility.Shuffle(departmentLists);
+    }
+
+    public async Task<IReadOnlyCollection<RaffleEntry>> ParseEntriesAsync(IReadOnlyCollection<Department> departments)
+    {
+        var rawPollFile = (await _rawDataFileReaderRef.EnumerateFilesAsync())?.FirstOrDefault();
+        if (rawPollFile == null)
+        {
+            throw new FileNotFoundException("尚未上傳志願序！");
+        }
+        var entries = new List<RaffleEntry>();
+
+        await using (var configFileStream = await rawPollFile.CreateMemoryStreamAsync())
+        {
+            using var streamReader = new StreamReader(configFileStream);
+            using var csvReader = new CsvReader(streamReader, _csvCultureInfo);
+            await csvReader.ReadAsync();
+            await Task.Run(() => csvReader.ReadHeader());
+            while (await csvReader.ReadAsync())
+            {
+                var submissionDate = csvReader.GetField<DateTime>("時間戳記");
+                var studentName = csvReader.GetField<string>("姓名").Trim();
+                var studentId = csvReader.GetField<string>("學號").Trim();
+                PrintLog(MessageType.Debug, $"日期: {submissionDate}");
+                var student = new Student(studentName, studentId);
+                PrintLog(MessageType.Debug, $"學生: {student}");
+                var preferenceEntry = new RaffleEntry(submissionDate, student);
+                for (var i = 0; i < departments.Count; i++)
+                {
+                    var fieldValue = csvReader.GetField<string>($"選股志願 [{i + 1}]");
+                    var preferredDepartment = departments.FirstOrDefault(x => x.Name == fieldValue);
+                    PrintLog(MessageType.Debug, $"志願{i}: {preferredDepartment}");
+                    preferenceEntry.AddPreference(preferredDepartment);
+                }
+                entries.Add(preferenceEntry);
+            }
+        }
+        return EnumerableUtility.Shuffle(entries);
+    }
+}

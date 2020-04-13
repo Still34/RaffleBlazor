@@ -1,0 +1,49 @@
+﻿@page "/qrcode"
+@using ZXing
+@using ZXing.Common
+@using ZXing.QrCode
+@using ZXing.QrCode.Internal
+@using ZXing.Rendering
+@inject BarcodeWriterSvg SvgWriter
+
+<Heading>
+    QR Code 產生器
+</Heading>
+
+<Paragraph>
+    本頁面是為了方便各位填志願序時拜訪表單連結所用的。
+</Paragraph>
+
+<div class="d-flex">
+    <div id="input-area" class="col-3">
+        <Card>
+            <CardHeader>
+                QR Code 字串
+            </CardHeader>
+            <CardBody>
+                <TextEdit Placeholder="QR Code 內容" TextChanged="@(async (value) =>
+                                                                {
+                                                                    QrOutput = await Task.Run(() =>
+                                                                    {
+                                                                        var svg = SvgWriter.Write(value);
+                                                                        return svg.ToString();
+                                                                    });
+                                                                })" />
+            </CardBody>
+        </Card>
+    </div>
+    <div id="output-area" class="col-6">
+        <Card>
+            <CardHeader>
+                QR Code 輸出
+            </CardHeader>
+            <CardBody>
+                @((MarkupString) QrOutput)
+            </CardBody>
+        </Card>
+    </div>
+</div>
+
+@code {
+    string QrOutput { get; set; }
+}

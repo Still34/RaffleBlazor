@@ -1,0 +1,52 @@
+﻿@inherits LayoutComponentBase
+@using Blazorise.Sidebar
+<Sidebar @ref="sidebar">
+    <SidebarContent>
+        <SidebarBrand>
+            <a href="">選股抽號器</a>
+        </SidebarBrand>
+        <SidebarNavigation>
+            <SidebarItem>
+                <SidebarLink To="" Title="首頁">
+                    <Icon Name="IconName.Person" Margin="Margin.Is3.FromRight" />首頁
+                </SidebarLink>
+            </SidebarItem>
+            <SidebarItem>
+                <SidebarLink To="qrcode" Title="QR Code 產生器">
+                    <Icon Name="@("fa-qrcode")" Margin="Margin.Is3.FromRight" />QR Code 產生器
+                </SidebarLink>
+            </SidebarItem>
+            <SidebarItem>
+                <SidebarLink To="picker" Title="選股器">
+                    <Icon Name="IconName.Search" Margin="Margin.Is3.FromRight" />選股器
+                </SidebarLink>
+            </SidebarItem>
+        </SidebarNavigation>
+    </SidebarContent>
+</Sidebar>
+
+<div class="app-main">
+    <Bar Background="Background.Light">
+        <BarBrand>
+            <a href="about">關於</a>
+        </BarBrand>
+        <BarToggler Clicked="@ToggleSidebar">
+        </BarToggler>
+    </Bar>
+
+    <div class="app-content">
+        @Body
+    </div>
+    <div class="watermark">
+        <i class="fas fa-graduation-cap"></i>
+    </div>
+</div>
+
+@code{
+    Sidebar sidebar;
+
+    void ToggleSidebar()
+    {
+        sidebar.Toggle();
+    }
+}

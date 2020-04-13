@@ -1,0 +1,162 @@
+﻿@page "/"
+@using System.IO
+@using System.Net
+@inject IJSRuntime JSRuntime
+
+<Heading Size="HeadingSize.Is1">
+    首頁
+</Heading>
+
+<Paragraph>
+    哈囉！看到這個頁面的學弟學妹好！這個系統是專門處理並抽選各股股員用的。
+    如果你是負責這屆抽股的人員，請仔細閱讀下列說明！
+</Paragraph>
+
+<Alert Color="Color.Warning" Visible="true">
+    <strong>請一定要在正式選股前測試是否有問題，如果有問題請立刻回報。</strong>
+</Alert>
+
+<Column ColumnSize="ColumnSize.Is6.OnWidescreen">
+    <Card>
+        <CardHeader>
+            <CardTitle>前期步驟</CardTitle>
+        </CardHeader>
+        <CardBody>
+            <Tabs SelectedTab="@selectedTabName" SelectedTabChanged="@OnSelectedTabChanged">
+                <Items>
+                    <Tab Name="google-form-integration">連結Google表單至報表</Tab>
+                    <Tab Name="post-step">志願序填完後</Tab>
+                </Items>
+                <Content>
+                    <TabPanel Name="google-form-integration">
+                        <Accordion>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepOne = !StepOne; })" Color="Color.Info">
+                                            複製預先設計好的Google表單
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepOne">
+                                    <Alert Color="Color.Info" Visible="true">
+                                        <a href="https://docs.google.com/forms/d/1Lipk5COc9nojUEhuqqpNWiHq5SDWbJ5J2Cx1QdGklbo/edit?usp=sharing">範本連結</a>
+                                        如果表單無法存取時，請以下列圖示當作範本重新製作－必須完全一模一樣。
+                                    </Alert>
+                                    <CardImage Source="images/sample-form.png" />
+                                </Collapse>
+                            </Card>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepTwo = !StepTwo; })" Color="Color.Info">
+                                            確定已啟用「接收回應」
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepTwo">
+                                    <CardImage Source="images/enable-responses.png" />
+                                </Collapse>
+                            </Card>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepThree= !StepThree; })" Color="Color.Info">
+                                            點擊「建立工作表」
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepThree">
+                                    <CardImage Source="images/create-spreadsheet.png" />
+                                </Collapse>
+                            </Card>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepFour= !StepFour; })" Color="Color.Info">
+                                            選擇工作表儲存地點
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepFour">
+                                    <Alert Color="Color.Info" Visible="true">
+                                        建議可使用先前所<a href="https://docs.google.com/spreadsheets/d/1gd8s9CsDOGYfC-b3AsJP9NkW2MYK0gK0tkvYpPFRndc/edit?usp=sharing">製作之工作表</a>為基底，並將新的工作表儲存地點重新命名為 <mark>Raw Data</mark>。這樣可以在投票時立刻呈現統計結果。
+                                    </Alert>
+                                    <CardImage Source="images/spreadsheet-dest.png" />
+                                </Collapse>
+                            </Card>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepFive= !StepFive; })" Color="Color.Danger">
+                                            測試是否可用且表格與下列截圖雷同
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepFive">
+                                    <CardImage Source="images/confirm-spreadsheet.png" />
+                                </Collapse>
+                            </Card>
+                        </Accordion>
+                    </TabPanel>
+                    <TabPanel Name="post-step">
+                        <Accordion>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(async () => { await JSRuntime.InvokeAsync<object>("FileSaveAs", "config.csv",Options.ConfigContent, "text/csv"); })" Color="Color.Success">
+                                            下載股員設定範例檔案
+                                        </Button>
+                                    </Heading>
+                                    <Alert Color="Color.Warning" Visible="true">
+                                        本設定檔包含各股的宣告以及各股人數，<strong>請自行更改設定部分並存檔</strong>。請確定設定的股員人數與填寫志願序的人數相同！
+                                    </Alert>
+                                </CardHeader>
+                            </Card>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepTwo= !StepTwo; })" Color="Color.Info">
+                                            自Google工作表中匯出志願結果之CSV檔案
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepTwo">
+                                    <CardImage Source="images/export-pref.png" />
+                                </Collapse>
+                            </Card>
+                            <Card>
+                                <CardHeader>
+                                    <Heading Size="HeadingSize.Is5">
+                                        <Button Clicked="@(() => { StepThree= !StepThree; })" Color="Color.Info">
+                                            接著依照抽號器步驟進行
+                                        </Button>
+                                    </Heading>
+                                </CardHeader>
+                                <Collapse Visible="@StepThree">
+                                    <CardImage Source="images/fun-part.png" />
+                                </Collapse>
+                            </Card>
+                        </Accordion>
+                    </TabPanel>
+                </Content>
+            </Tabs>
+        </CardBody>
+    </Card>
+</Column>
+
+
+@code {
+    bool StepOne { get; set; }
+    bool StepTwo { get; set; }
+    bool StepThree { get; set; }
+    bool StepFour { get; set; }
+    bool StepFive { get; set; }
+
+    private string selectedTabName = "google-form-integration";
+    private void OnSelectedTabChanged(string name)
+    {
+        selectedTabName = name;
+    }
+
+}
