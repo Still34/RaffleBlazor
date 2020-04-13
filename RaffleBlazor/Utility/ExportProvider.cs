@@ -1,4 +1,4 @@
-using DocumentFormat.OpenXml;
+﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using RaffleBlazor.Models;
@@ -27,6 +27,8 @@ namespace RaffleBlazor.Utility
             {
                 WorkbookPart workbookPart = spreadsheet.AddWorkbookPart();
                 workbookPart.Workbook = new Workbook();
+
+                // Insert stylesheet to make the top row bold
                 var workbookStylesPart = workbookPart.AddNewPart<WorkbookStylesPart>();
                 workbookStylesPart.Stylesheet = CreateStylesheet();
 
@@ -54,9 +56,9 @@ namespace RaffleBlazor.Utility
                     {
                         var entryRow = new Row { RowIndex = rowIndex };
                         entryRow.Append(
-                            new Cell { CellValue = new CellValue(student.Id), DataType = CellValues.String },
-                            new Cell { CellValue = new CellValue(student.Name), DataType = CellValues.String },
-                            new Cell { CellValue = new CellValue(student.Department.Name), DataType = CellValues.String });
+                            new Cell { CellValue = new CellValue(student.Id), DataType = CellValues.String, StyleIndex = 1 },
+                            new Cell { CellValue = new CellValue(student.Name), DataType = CellValues.String, StyleIndex = 1 },
+                            new Cell { CellValue = new CellValue(student.Department.Name), DataType = CellValues.String, StyleIndex = 1 });
                         sheetData.AppendChild(entryRow);
                         rowIndex++;
                     }
@@ -69,18 +71,54 @@ namespace RaffleBlazor.Utility
             return await ReadStreamToBase64(ms);
         }
 
+        // Stylesheet has to follow this order:
+        //      Font -> Fills/Borders -> CellFormats
+        // If you change *any* of the order, Excel will consider the spreadsheet broken.
         internal Stylesheet CreateStylesheet()
         {
             var stylesheet = new Stylesheet();
             var fonts = new Fonts();
             fonts.AppendChild(new Font
             {
+                Bold = new Bold(),
                 FontName = new FontName { Val = "Microsoft YaHei" },
                 FontSize = new FontSize { Val = 12 },
-                FontFamilyNumbering = new FontFamilyNumbering { Val = 2 },
+                FontFamilyNumbering = new FontFamilyNumbering { Val = 1 }
             });
+            fonts.AppendChild(new Font
+            {
+                FontName = new FontName { Val = "Microsoft YaHei Light" },
+                FontSize = new FontSize { Val = 12 },
+                FontFamilyNumbering = new FontFamilyNumbering { Val = 1 }
+            });
+            fonts.KnownFonts = true;
             fonts.Count = (uint)fonts.ChildElements.Count;
             stylesheet.AppendChild(fonts);
+
+            // Default everything else because Excel considers this 
+            // spreadsheet broken if it's missing *any* of these.
+            Fill fill = new Fill() { PatternFill = new PatternFill() };
+            Fills fills = new Fills();
+            fills.AppendChild(fill);
+            fills.Count = (uint)fills.ChildElements.Count;
+            stylesheet.AppendChild(fills);
+
+            Border border = new Border() { LeftBorder = new LeftBorder(), RightBorder = new RightBorder(), BottomBorder = new BottomBorder(), DiagonalBorder = new DiagonalBorder(), TopBorder = new TopBorder() };
+            Borders borders = new Borders();
+            borders.AppendChild(border);
+            borders.Count = (uint)borders.ChildElements.Count;
+            stylesheet.AppendChild(borders);
+            
+            // Now we can actually define the cell formats.
+            // Screw OpenXML.
+            var cellFormats = new CellFormats();
+            var titleCellFormat = new CellFormat() { FontId = 0, FillId = 0, BorderId = 0 };
+            var regularCellFormat = new CellFormat() { FontId = 1, FillId = 0, BorderId = 0, ApplyFont = true };
+            cellFormats.AppendChild(titleCellFormat);
+            cellFormats.AppendChild(regularCellFormat);
+            cellFormats.Count = (uint)cellFormats.ChildElements.Count;
+            stylesheet.AppendChild(cellFormats);
+
             return stylesheet;
         }
 
