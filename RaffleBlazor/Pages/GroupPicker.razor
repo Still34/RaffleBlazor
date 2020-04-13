@@ -80,14 +80,14 @@
 
     <section class="d-inline-block" id="upload-area">
         <div class="custom-file mb-2" id="config-section">
-            <input type="file" class="custom-file-input" id="config-file" accept=".csv" @ref="_configElementRef" @onchange="LoadConfig" />
+            <input type="file" class="custom-file-input" id="config-file" accept=".csv" @ref="_configElementRef" @onchange="@LoadConfig" />
             <label class="custom-file-label" for="config-file">上傳設定檔 (*.csv)</label>
         </div>
         <div class="custom-file mb-2" id="raw-poll-section" style="@RaffleEntryInputCss">
             <input type="file" class="custom-file-input" id="raw-poll-file" accept=".csv" @ref="_rawDataElementRef" />
             <label class="custom-file-label" for="raw-poll-file">上傳志願序 (*.csv)</label>
         </div>
-        <button type="button" class="btn btn-primary mb-2" @onclick="@(async () => {await LoadEntries(); await Task.Run(RunPoll);})">選股！</button>
+        <button type="button" class="btn btn-primary mb-2" @onclick="@(async () => {var isSuccessful = await LoadEntries(); if (isSuccessful){await Task.Run(RunPoll); } })">選股！</button>
         <button type="button" class="btn btn-success mb-2 ml-2" @onclick="@(async () => {await JSRuntime.InvokeAsync<object>("FileSaveAs", "config.csv",Options.ConfigContent, "text/csv"); })">
             下載股員設定範例檔案
         </button>
@@ -95,7 +95,7 @@
 
     <section id="log-area" class="d-flex flex-column">
         <div id="alert-print">
-            <Alert Color="Blazorise.Color.Danger" Visible="@(!(string.IsNullOrEmpty(AlertTitle)))">
+            <Alert Color="Blazorise.Color.Danger" @ref="@ExceptionAlert">
                 <Heading>
                     @AlertTitle
                 </Heading>
@@ -129,7 +129,7 @@
         try
         {
             var base64 = await ExportProvider.GetXlsxAsync(departments);
-            await JSRuntime.InvokeAsync<object>("FileSaveAs", $"{DateTime.Now:yyyy-MM-dd}export.xlsx", base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            await JSRuntime.InvokeAsync<object>("FileSaveAs", $"{DateTime.Now:yyyy-MM-dd}-選股結果.xlsx", base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         }
         catch(Exception e)
         {
@@ -163,6 +163,7 @@
 <!-- Logger -->
 
 @code{
+    Alert ExceptionAlert;
     public string LoggingOutput { get; set; } = string.Empty;
     public string AlertTitle { get; set; }
     public string AlertText { get; set; }
@@ -175,6 +176,7 @@
             AlertTitle = alertTitle ?? "噢不，出錯了，希望這不是正式選股的時候出包 ヽ(*。>Д<)o゜";
             AlertText = $"錯誤訊息: {logMessage}";
             ShowSnackbar(alertTitle, SnackbarColor.Danger);
+            ExceptionAlert.Show();
         }
 
         StringBuilder.AppendLine($"[{DateTime.UtcNow}] [{messageType}] {logMessage}");
@@ -283,25 +285,54 @@
 
     private async Task LoadConfig()
     {
-        Departments = await ParseDepartmentsAsync();
+        try
+        {
+            Departments = await ParseDepartmentsAsync();
+        }
+        catch(Exception e)
+        {
+            PrintLog(MessageType.Error, e.Message, "讀取設定有誤！");
+            RaffleEntryInputCss = "display: none";
+            return;
+        }
         PrintLog(MessageType.Information, $"已取得 {Departments.Count} 個股別。");
         ShowSnackbar($"已取得 {Departments.Count} 個股別及 {Departments.Sum(x=>x.MaxStudents)} 個股員。");
         RaffleEntryInputCss = "display: inherit";
+        ResetExceptionAlert();
     }
-    private async Task LoadEntries()
+
+    private async Task<bool> LoadEntries()
     {
         if (Departments?.Count > 0)
         {
-            RaffleEntries = await ParseEntriesAsync(Departments);
+            try
+            {
+                RaffleEntries = await ParseEntriesAsync(Departments);
+            }
+            catch (Exception e)
+            {
+                PrintLog(MessageType.Error, e.Message, "讀取志願有誤！");
+                return false;
+            }
             PrintLog(MessageType.Information, $"已取得 {RaffleEntries.Count} 個志願序。");
             ShowSnackbar($"已取得 {RaffleEntries.Count} 個志願序。");
+            ResetExceptionAlert();
+            return true;
         }
         else
         {
             ShowSnackbar("尚未讀取股員設定；你怎麼到這步的╰（‵□′）╯？", SnackbarColor.Danger);
+            return false;
         }
     }
 
+
+    internal void ResetExceptionAlert()
+    {
+        AlertTitle = null;
+        AlertText = null;
+        ExceptionAlert.Hide();
+    }
     internal bool PollPreconditionCheck()
     {
         if (Students?.Count > 0)
@@ -312,14 +343,14 @@
         }
         if (Departments == null || Departments?.Count == 0)
         {
-            ShowSnackbar("股別數設定錯誤，請檢查您的設定檔。", SnackbarColor.Danger);
+            PrintLog(MessageType.Error, "股別設定有誤", "請檢查您的設定檔！");
             return false;
         }
         if (RaffleEntries == null || RaffleEntries?.Count == 0){
-            ShowSnackbar("志願數錯誤，請檢查您的選股輸出檔案。", SnackbarColor.Danger);
+            PrintLog(MessageType.Error, "志願數有誤", "請檢查您的選股輸出檔案！");
             return false;
         }
-        
+
         var maxStudents = Departments.Sum(x => x.MaxStudents);
         var entryCount = RaffleEntries.Count;
         if (maxStudents != entryCount)
@@ -327,9 +358,7 @@
             PrintLog(MessageType.Error, $"設定的股員人數 ({maxStudents}) 不符實際收到的學生志願數 ({entryCount})。", "請檢查是否有人填寫重複志願或股員人數設定有誤。");
             return false;
         }
-        
-        AlertTitle = null;
-        AlertText = null;
+        ResetExceptionAlert();
         return true;
     }
     public void RunPoll()
@@ -404,9 +433,15 @@
             await Task.Run(() => csvReader.ReadHeader());
             while (await csvReader.ReadAsync())
             {
-                var departmentName = csvReader.GetField<string>(0);
-                var maxDepartmentUsers = csvReader.GetField<int>(1);
-                departmentLists.Add(new Department(departmentName, maxDepartmentUsers));
+                if (csvReader.TryGetField<string>(0, out var departmentName) &&
+                    csvReader.TryGetField<int>(1, out var maxDepartmentUsers))
+                {
+                    departmentLists.Add(new Department(departmentName, maxDepartmentUsers));
+                }
+                else
+                {
+                    throw new InvalidDataException("設定資料錯誤；請檢查您所使用的設定檔！");
+                }
             }
         }
         return EnumerableUtility.Shuffle(departmentLists);
@@ -429,21 +464,27 @@
             await Task.Run(() => csvReader.ReadHeader());
             while (await csvReader.ReadAsync())
             {
-                var submissionDate = csvReader.GetField<DateTime>("時間戳記");
-                var studentName = csvReader.GetField<string>("姓名").Trim();
-                var studentId = csvReader.GetField<string>("學號").Trim();
-                PrintLog(MessageType.Debug, $"日期: {submissionDate}");
-                var student = new Student(studentName, studentId);
-                PrintLog(MessageType.Debug, $"學生: {student}");
-                var preferenceEntry = new RaffleEntry(submissionDate, student);
-                for (var i = 0; i < departments.Count; i++)
+                if (csvReader.TryGetField<DateTime>("時間戳記", out var submissionDate) &&
+                    csvReader.TryGetField<string>("姓名", out var studentName) &&
+                    csvReader.TryGetField<string>("學號", out var studentId))
                 {
-                    var fieldValue = csvReader.GetField<string>($"選股志願 [{i + 1}]");
-                    var preferredDepartment = departments.FirstOrDefault(x => x.Name == fieldValue);
-                    PrintLog(MessageType.Debug, $"志願{i}: {preferredDepartment}");
-                    preferenceEntry.AddPreference(preferredDepartment);
+                    PrintLog(MessageType.Debug, $"日期: {submissionDate}");
+                    var student = new Student(studentName.Trim(), studentId.Trim());
+                    PrintLog(MessageType.Debug, $"學生: {student}");
+                    var preferenceEntry = new RaffleEntry(submissionDate, student);
+                    for (var i = 0; i < departments.Count; i++)
+                    {
+                        var fieldValue = csvReader.GetField<string>($"選股志願 [{i + 1}]");
+                        var preferredDepartment = departments.FirstOrDefault(x => x.Name == fieldValue);
+                        PrintLog(MessageType.Debug, $"志願{i}: {preferredDepartment}");
+                        preferenceEntry.AddPreference(preferredDepartment);
+                    }
+                    entries.Add(preferenceEntry);
                 }
-                entries.Add(preferenceEntry);
+                else
+                {
+                    throw new InvalidDataException("志願資料錯誤；請檢查您所輸出的志願檔！");
+                }
             }
         }
         return EnumerableUtility.Shuffle(entries);
